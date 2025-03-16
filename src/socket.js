@@ -39,7 +39,6 @@ const sanitizeChat = (string, isMessage) => {
         string = string.replace(/:kick:/g, "<img height='20' width='20' src='emotes/kick.gif' alt=':kick:' />");
         string = string.replace(/:shock:/g, "<img height='20' width='20' src='emotes/shock.gif' alt=':shock:' />");
         string = string.replace(/:bup:/g, "<img height='20' width='20' src='emotes/bup.jpg' alt=':bup:' />");
-        string = string.replace(/:xkoop:/g, "<img height='20' width='20' src='emotes/xkoop.png' alt=':xkoop:' />");
         // string.replace any other emotes in this fashion.
     }
     return string;
