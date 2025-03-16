@@ -20,8 +20,8 @@
     "webpack-dev-server": "^3.11.0"
   },
   "scripts": {
-    "quickstart": "npm install && webpack --mode production && node serveProduction.js",
-    "serve": "node serveProduction.js",
+    "quickstart": "npm install && webpack --mode production && node server.js",
+    "serve": "node server.js",
     "build": "webpack --mode production",
     "build:dev": "webpack --mode development",
     "start": "webpack-dev-server --host 0.0.0.0 --disable-host-check  --mode development",
