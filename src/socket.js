@@ -19,7 +19,7 @@ const url = new URL(window.location.href)
 let websocketServerPath = ""
 
 if (url.protocol == "https:") {
-    websocketServerPath = `wss://${url.hostname}:8080`
+    websocketServerPath = `wss://${url.hostname}`
 } else {
     websocketServerPath = `ws://localhost:3000`
 }
