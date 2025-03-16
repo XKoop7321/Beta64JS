@@ -5,8 +5,8 @@ const got = require('got')
 const util = require('util')
 const zlib = require('zlib')
 const deflate = util.promisify(zlib.deflate)
-const port = 3080
-const ws_port = process.env.PORT || 3000
+const port = 9106
+const ws_port = process.env.WS_PORT || 3000
 
 const allChannels = {}
 const stats = {}
@@ -298,7 +298,7 @@ require('uWebSockets.js').App().ws('/*', {
 const express = require('express')
 const app = express()
 const server = http.Server(app)
-app.use(express.static(__dirname + '/static'))
+app.use(express.static(__dirname + '/dist'))
 
 server.listen(port, () => { console.log('Serving Files with express server ' + port) })
 
