@@ -286,7 +286,7 @@ server2.listen(ws_port, () => {
     if (ws_port === 443) {
         console.log(`Because you are on port ${ws_port}, hardcoding the port is not needed when connecting to /ws/.`);
     } else {
-        console.log(`WebSocket server is running on port ${ws_port}/`);
+        console.log(`WebSocket server is running on port ${ws_port}`);
     }
 });
 
