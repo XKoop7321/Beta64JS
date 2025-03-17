@@ -1,20 +1,20 @@
-const { RootMsg, MarioListMsg, ControllerMsg, ValidPlayersMsg, Sm64JsMsg } = require("./proto/mario_pb")
-const fs = require('fs')
-const http = require('http')
-const got = require('got')
-const util = require('util')
-const zlib = require('zlib')
-const deflate = util.promisify(zlib.deflate)
-const port = 9106
-const ws_port = process.env.WS_PORT || 3000
+const { RootMsg, MarioListMsg, ControllerMsg, ValidPlayersMsg, Sm64JsMsg } = require("./proto/mario_pb");
+const fs = require('fs');
+const http = require('http');
+const got = require('got');
+const util = require('util');
+const zlib = require('zlib');
+const deflate = util.promisify(zlib.deflate);
+const port = 9106;
+const ws_port = process.env.WS_PORT || 3000;
 
-const allChannels = {}
-const stats = {}
+const allChannels = {};
+const stats = {};
 
-let currentId = 0
+let currentId = 0;
 const generateID = () => {
-    if (++currentId > 1000000) currentId = 0
-    return currentId
+    if (++currentId > 1000000) currentId = 0;
+    return currentId;
 }
 
 const text = {
@@ -23,136 +23,129 @@ const text = {
 }
 
 const sendJsonWithTopic = (topic, msg, channel) => {
-    const str = JSON.stringify({ topic, msg })
-    let bytes = text.encoder.encode(str)
-    const rootMsg = new RootMsg()
-    rootMsg.setJsonBytesMsg(bytes)
-    channel.send(rootMsg.serializeBinary(), true)
+    const str = JSON.stringify({ topic, msg });
+    let bytes = text.encoder.encode(str);
+    const rootMsg = new RootMsg();
+    rootMsg.setJsonBytesMsg(bytes);
+    channel.send(rootMsg.serializeBinary(), true);
 }
 
 const broadcastJsonWithTopic = (topic, msg) => {
-    const str = JSON.stringify({ topic, msg })
-    let bytes = text.encoder.encode(str)
-    const rootMsg = new RootMsg()
-    rootMsg.setJsonBytesMsg(bytes)
-    bytes = rootMsg.serializeBinary()
-    Object.values(allChannels).forEach(s => { s.channel.send(bytes, true) })
+    const str = JSON.stringify({ topic, msg });
+    let bytes = text.encoder.encode(str);
+    const rootMsg = new RootMsg();
+    rootMsg.setJsonBytesMsg(bytes);
+    bytes = rootMsg.serializeBinary();
+    Object.values(allChannels).forEach(s => { s.channel.send(bytes, true) });
 }
 
 const sendData = (bytes, channel) => { channel.send(bytes, true) }
 
 const broadcastData = (bytes, channel) => {
-    Object.values(allChannels).forEach(s => { s.channel.send(bytes, true) })
+    Object.values(allChannels).forEach(s => { s.channel.send(bytes, true) });
 }
 
 const sendValidUpdate = () => {
 
-    const validPlayers = Object.values(allChannels).filter(data => data.valid > 0).map(data => data.channel.my_id)
+    const validPlayers = Object.values(allChannels).filter(data => data.valid > 0).map(data => data.channel.my_id);
 
-    const validplayersmsg = new ValidPlayersMsg()
-    validplayersmsg.setValidplayersList(validPlayers)
-    const sm64jsMsg = new Sm64JsMsg()
-    sm64jsMsg.setValidPlayersMsg(validplayersmsg)
-    const rootMsg = new RootMsg()
-    rootMsg.setUncompressedSm64jsMsg(sm64jsMsg)
-    broadcastData(rootMsg.serializeBinary())
+    const validplayersmsg = new ValidPlayersMsg();
+    validplayersmsg.setValidplayersList(validPlayers);
+    const sm64jsMsg = new Sm64JsMsg();
+    sm64jsMsg.setValidPlayersMsg(validplayersmsg);
+    const rootMsg = new RootMsg();
+    rootMsg.setUncompressedSm64jsMsg(sm64jsMsg);
+    broadcastData(rootMsg.serializeBinary());
 }
 
 
 const processPlayerData = (channel_id, decodedMario) => {
 
-    //Pretty strict validation  -- ignoring validation for now
-    if (decodedMario.getChannelid() != decodedMario.getController().getChannelid()) return
-    if (decodedMario.getPlayername().length < 3 || decodedMario.getPlayername().length > 14) return
-    if (allChannels[channel_id] == undefined) return
+    if (decodedMario.getChannelid() != decodedMario.getController().getChannelid()) return;
+    if (decodedMario.getPlayername().length < 3 || decodedMario.getPlayername().length > 14) return;
+    if (allChannels[channel_id] == undefined) return;
 
-    /// server should always force the channel_id
-    decodedMario.setChannelid(channel_id)
+    decodedMario.setChannelid(channel_id);
 
-    /// Data is Valid
-    allChannels[channel_id].decodedMario = decodedMario
-    allChannels[channel_id].valid = 180
+    allChannels[channel_id].decodedMario = decodedMario;
+    allChannels[channel_id].valid = 180;
 
 }
 
 const processControllerUpdate = (channel_id, bytes) => {
-    const decodedController = ControllerMsg.deserializeBinary(bytes)
+    const decodedController = ControllerMsg.deserializeBinary(bytes);
 
-    /// do some validation here probably
-    allChannels[channel_id].decodedController = decodedController
-    //broadcastDataWithOpcode(bytes, 3, channel_id)
+    allChannels[channel_id].decodedController = decodedController;
 }
 
 const validSkins = (skinData) => {
-    if (skinData.overalls.length != 6) return false
-    if (skinData.hat.length != 6) return false
-    if (skinData.shirt.length != 6) return false
-    if (skinData.gloves.length != 6) return false
-    if (skinData.boots.length != 6) return false
-    if (skinData.skin.length != 6) return false
-    if (skinData.hair.length != 6) return false
-
+    if (skinData.overalls.length != 6) return false;
+    if (skinData.hat.length != 6) return false;
+    if (skinData.shirt.length != 6) return false;
+    if (skinData.gloves.length != 6) return false;
+    if (skinData.boots.length != 6) return false;
+    if (skinData.skin.length != 6) return false;
+    if (skinData.hair.length != 6) return false;
 
     for (let i = 0; i < 6; i++) {
-        let number = skinData.overalls[i]
-        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false
-        number = skinData.hat[i]
-        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false
-        number = skinData.shirt[i]
-        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false
-        number = skinData.gloves[i]
-        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false
-        number = skinData.boots[i]
-        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false
-        number = skinData.skin[i]
-        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false
-        number = skinData.hair[i]
-        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false
+        let number = skinData.overalls[i];
+        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false;
+        number = skinData.hat[i];
+        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false;
+        number = skinData.shirt[i];
+        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false;
+        number = skinData.gloves[i];
+        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false;
+        number = skinData.boots[i];
+        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false;
+        number = skinData.skin[i];
+        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false;
+        number = skinData.hair[i];
+        if (isNaN(number) || number < 0 || number > 255 || !Number.isInteger(number)) return false;
     }
 
-    return true
+    return true;
 
 }
 
 
 const processSkin = (channel_id, msg) => {
-    if (allChannels[channel_id].valid == 0) return
+    if (allChannels[channel_id].valid == 0) return;
 
-    if (!validSkins(msg)) return
+    if (!validSkins(msg)) return;
 
-    allChannels[channel_id].skinData = msg
-    allChannels[channel_id].skinData.updated = true
+    allChannels[channel_id].skinData = msg;
+    allChannels[channel_id].skinData.updated = true;
 }
 
 const sanitizeChat = (string) => {
-    string = string.substring(0, 200)
-    string = string.replace(/</g, "")
-    string = string.replace(/>/g, "")
-    return string
+    string = string.substring(0, 200);
+    string = string.replace(/</g, "");
+    string = string.replace(/>/g, "");
+    return string;
 }
 
 const processChat = async (channel_id, msg) => {
 
-    if (allChannels[channel_id].chatCooldown > 0) return
-    allChannels[channel_id].chatCooldown = 3 // seconds
-    if (msg.length == 0) return
+    if (allChannels[channel_id].chatCooldown > 0) return;
+    allChannels[channel_id].chatCooldown = 3;
+    if (msg.length == 0) return;
 
-    const decodedMario = Object.values(allChannels).find(data => data.channel.my_id == channel_id).decodedMario
-    if (decodedMario == undefined) return
+    const decodedMario = Object.values(allChannels).find(data => data.channel.my_id == channel_id).decodedMario;
+    if (decodedMario == undefined) return;
 
+    const sanitizedChat = sanitizeChat(msg);
 
-    const sanitizedChat = sanitizeChat(msg)
-
-    const request = "http://www.purgomalum.com/service/json?text=" + sanitizedChat
-    const playerNameRequest = "http://www.purgomalum.com/service/json?text=" + decodedMario.getPlayername()
+    const request = "http://www.purgomalum.com/service/json?text=" + sanitizedChat;
+    const playerNameRequest = "http://www.purgomalum.com/service/json?text=" + decodedMario.getPlayername();
 
     try {
-        const filteredMessage = JSON.parse((await got(request)).body).result
-        const filteredPlayerName = JSON.parse((await got(playerNameRequest)).body).result
+        const filteredMessage = JSON.parse((await got(request)).body).result;
+        const filteredPlayerName = JSON.parse((await got(playerNameRequest)).body).result;
 
         if (decodedMario.getPlayername() != filteredPlayerName) {
-            allChannels[channel_id].channel.close()
-            return
+            allChannels[channel_id].channel.close();
+            return;
         }
 
         const chatmsg = {
@@ -161,138 +154,119 @@ const processChat = async (channel_id, msg) => {
             sender: decodedMario.getPlayername()
         }
 
-        broadcastJsonWithTopic('chat', chatmsg)
+        broadcastJsonWithTopic('chat', chatmsg);
 
     } catch (e) {
-        console.log(`Got error with profanity api: ${e}`)
+        console.log(`Got error with profanity api: ${e}`);
     }
 
 }
 
 const sendSkinsToChannel = (channel) => {
-    /// Send Skins
     Object.entries(allChannels).forEach(([channel_id, data]) => {
         if (data.skinData) {
-            const skinMsg = { channel_id, skinData: data.skinData }
-            sendJsonWithTopic('skin', skinMsg, channel)
+            const skinMsg = { channel_id, skinData: data.skinData };
+            sendJsonWithTopic('skin', skinMsg, channel);
         }
-    })
+    });
 }
 
 const sendSkinsIfUpdated = () => {
-    /// Send Skins
     Object.entries(allChannels).forEach(([channel_id, data]) => {
         if (data.skinData) {
-            const skinMsg = { channel_id, skinData: data.skinData }
-            broadcastJsonWithTopic('skin', skinMsg)
-            data.skinData.updated = false
+            const skinMsg = { channel_id, skinData: data.skinData };
+            broadcastJsonWithTopic('skin', skinMsg);
+            data.skinData.updated = false;
         }
-    })
+    });
 }
 
-
-/// Every frame - 30 times per second
 setInterval(async () => {
     Object.values(allChannels).forEach(data => {
-        if (data.valid > 0) data.valid--
-        else if (data.decodedMario) data.channel.close()
-    })
+        if (data.valid > 0) data.valid--;
+        else if (data.decodedMario) data.channel.close();
+    });
 
-    const sm64jsMsg = new Sm64JsMsg()
-    const mariolist = Object.values(allChannels).filter(data => data.decodedMario).map(data => data.decodedMario)
-    const mariolistproto = new MarioListMsg()
-    mariolistproto.setMarioList(mariolist)
-    sm64jsMsg.setListMsg(mariolistproto)
-    const bytes = sm64jsMsg.serializeBinary()
-    const compressedBytes = await deflate(bytes)
-    const rootMsg = new RootMsg()
-    rootMsg.setCompressedSm64jsMsg(compressedBytes)
-    broadcastData(rootMsg.serializeBinary())
+    const sm64jsMsg = new Sm64JsMsg();
+    const mariolist = Object.values(allChannels).filter(data => data.decodedMario).map(data => data.decodedMario);
+    const mariolistproto = new MarioListMsg();
+    mariolistproto.setMarioList(mariolist);
+    sm64jsMsg.setListMsg(mariolistproto);
+    const bytes = sm64jsMsg.serializeBinary();
+    const compressedBytes = await deflate(bytes);
+    const rootMsg = new RootMsg();
+    rootMsg.setCompressedSm64jsMsg(compressedBytes);
+    broadcastData(rootMsg.serializeBinary());
 
-}, 33)
+}, 33);
 
-/// Every other frame - 16 times per second
 setInterval(async () => {
-/*    const controllerlist = Object.values(allChannels).filter(data => data.decodedController).map(data => data.decodedController)
-    const controllerlistproto = new ControllerListMsg()
-    controllerlistproto.setControllerList(controllerlist)
-    const bytes = controllerlistproto.serializeBinary()
-    const compressedMsg = await deflate(bytes)
-    broadcastDataWithOpcode(compressedMsg, 3)*/
 
-}, 66)
+}, 66);
 
-
-/// Every 33 frames / once per second
 setInterval(() => {
-    sendValidUpdate()
+    sendValidUpdate();
 
-    //chat cooldown
     Object.values(allChannels).forEach(data => {
-        if (data.chatCooldown > 0) data.chatCooldown--
-    })
-}, 1000)
+        if (data.chatCooldown > 0) data.chatCooldown--;
+    });
+}, 1000);
 
-/// Every 10 seconds
 setInterval(() => {
+    sendSkinsIfUpdated();
 
-    sendSkinsIfUpdated()
+}, 10000);
 
-}, 10000)
+const WebSocket = require('ws'); 
 
+const wss = new WebSocket.Server({ port: ws_port });
 
-require('uWebSockets.js').App().ws('/*', {
+wss.on('connection', (ws) => {
+    const channel_id = generateID();
+    allChannels[channel_id] = { valid: 0, channel: ws, chatCooldown: 0 };
 
-    open: async (channel) => {
-        channel.my_id = generateID()
-        allChannels[channel.my_id] = { valid: 0, channel, chatCooldown: 0 }
-        sendJsonWithTopic('id', { id: channel.my_id }, channel)
+    sendJsonWithTopic('id', { id: channel_id }, ws);
 
-        sendSkinsToChannel(channel)
-    },
+    sendSkinsToChannel(ws);
 
-    message: async (channel, bytes) => {
+    ws.on('message', (bytes) => {
         try {
-            let sm64jsMsg
-            const rootMsg = RootMsg.deserializeBinary(bytes)
+            let sm64jsMsg;
+            const rootMsg = RootMsg.deserializeBinary(bytes);
 
             switch (rootMsg.getMessageCase()) {
                 case RootMsg.MessageCase.UNCOMPRESSED_SM64JS_MSG:
-                    sm64jsMsg = rootMsg.getUncompressedSm64jsMsg()
+                    sm64jsMsg = rootMsg.getUncompressedSm64jsMsg();
                     switch (sm64jsMsg.getMessageCase()) {
                         case Sm64JsMsg.MessageCase.MARIO_MSG:
-                            processPlayerData(channel.my_id, sm64jsMsg.getMarioMsg()); break
-                        //case 2: processBasicAttack(channel.my_id, bytes.slice(1)); break
-                        //case 3: processControllerUpdate(channel.my_id, bytes.slice(1)); break
-                        //case 4: processKnockUp(channel.my_id, bytes.slice(1)); break
-                        default: throw "unknown case for uncompressed proto message"
+                            processPlayerData(channel_id, sm64jsMsg.getMarioMsg()); break;
+                        default: throw "unknown case for uncompressed proto message";
                     }
-                    break
+                    break;
                 case RootMsg.MessageCase.JSON_BYTES_MSG:
-                    const str = text.decoder.decode(rootMsg.getJsonBytesMsg())
-                    const { topic, msg } = JSON.parse(str)
+                    const str = text.decoder.decode(rootMsg.getJsonBytesMsg());
+                    const { topic, msg } = JSON.parse(str);
                     switch (topic) {
-                        case 'chat': processChat(channel.my_id, msg); break
-                        case 'skin': processSkin(channel.my_id, msg); break
-                        case 'ping': sendData(bytes, channel); break
-                        default: throw "Unknown topic in json message"
+                        case 'chat': processChat(channel_id, msg); break;
+                        case 'skin': processSkin(channel_id, msg); break;
+                        case 'ping': sendData(bytes, ws); break;
+                        default: throw "Unknown topic in json message";
                     }
-                    break
+                    break;
                 case RootMsg.MessageCase.MESSAGE_NOT_SET:
                 default:
-                    throw new Error(`unhandled case in switch expression: ${rootMsg.getMessageCase()}`)
+                    throw new Error(`unhandled case in switch expression: ${rootMsg.getMessageCase()}`);
             }
 
+        } catch (err) { console.log(err); }
+    });
 
-        } catch (err) { console.log(err) }
-    },
+    ws.on('close', () => {
+        delete allChannels[channel_id];
+    });
+});
 
-    close: (channel) => {
-        delete allChannels[channel.my_id]
-    }
-
-}).listen(ws_port, () => { console.log("Starting websocket server " + ws_port) })
-
+wss.listen(ws_port, () => { console.log("Starting websocket server " + ws_port) });
 
 //// Express Static serving
 const express = require('express')
