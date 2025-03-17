@@ -217,16 +217,15 @@ setInterval(() => {
 
 }, 10000);
 
-const WebSocket = require('ws'); 
+const server2 = http.createServer();
 
-const wss = new WebSocket.Server({ port: ws_port });
+const wss = new WebSocket.Server({ noServer: true });
 
 wss.on('connection', (ws) => {
     const channel_id = generateID();
     allChannels[channel_id] = { valid: 0, channel: ws, chatCooldown: 0 };
 
     sendJsonWithTopic('id', { id: channel_id }, ws);
-
     sendSkinsToChannel(ws);
 
     ws.on('message', (bytes) => {
@@ -239,8 +238,10 @@ wss.on('connection', (ws) => {
                     sm64jsMsg = rootMsg.getUncompressedSm64jsMsg();
                     switch (sm64jsMsg.getMessageCase()) {
                         case Sm64JsMsg.MessageCase.MARIO_MSG:
-                            processPlayerData(channel_id, sm64jsMsg.getMarioMsg()); break;
-                        default: throw "unknown case for uncompressed proto message";
+                            processPlayerData(channel_id, sm64jsMsg.getMarioMsg());
+                            break;
+                        default:
+                            throw "Unknown case for uncompressed proto message";
                     }
                     break;
                 case RootMsg.MessageCase.JSON_BYTES_MSG:
@@ -255,10 +256,12 @@ wss.on('connection', (ws) => {
                     break;
                 case RootMsg.MessageCase.MESSAGE_NOT_SET:
                 default:
-                    throw new Error(`unhandled case in switch expression: ${rootMsg.getMessageCase()}`);
+                    throw new Error(`Unhandled case in switch expression: ${rootMsg.getMessageCase()}`);
             }
 
-        } catch (err) { console.log(err); }
+        } catch (err) { 
+            console.log(err);
+        }
     });
 
     ws.on('close', () => {
@@ -266,7 +269,25 @@ wss.on('connection', (ws) => {
     });
 });
 
-wss.listen(ws_port, () => { console.log("Starting websocket server " + ws_port) });
+server2.on('upgrade', (req, socket, head) => {
+    const targetUrl = ws_port === 443 ? '/ws/' : '/';
+
+    if (req.url === targetUrl) {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req);
+        });
+    } else {
+        socket.destroy();
+    }
+});
+
+server2.listen(ws_port, () => {
+    if (ws_port === 443) {
+        console.log(`Because you are on port ${ws_port}, hardcoding the port is not needed when connecting to /ws/.`);
+    } else {
+        console.log(`WebSocket server is running on port ${ws_port}`);
+    }
+});
 
 //// Express Static serving
 const express = require('express')
