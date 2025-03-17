@@ -7,6 +7,7 @@ const zlib = require('zlib');
 const deflate = util.promisify(zlib.deflate);
 const port = 9106;
 const ws_port = process.env.WS_PORT || 3000;
+const WebSocket = require('ws');
 
 const allChannels = {};
 const stats = {};
