@@ -68,7 +68,7 @@ const processPlayerData = (channel_id, decodedMario) => {
     decodedMario.setChannelid(channel_id);
 
     allChannels[channel_id].decodedMario = decodedMario;
-    allChannels[channel_id].valid = 180; // AFK Timer
+    allChannels[channel_id].valid = 180;//afk timeout
 
 }
 
