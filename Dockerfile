@@ -1,6 +1,6 @@
 FROM node:14
 
-RUN apt-get update && apt-get install gcc libc-dev python3 bash
+RUN apt-get update && apt-get install -y gcc libc-dev python3 bash
 
 RUN mkdir -p /usr/src/app
 
