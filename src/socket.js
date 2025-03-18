@@ -21,7 +21,7 @@ let websocketServerPath = ""
 if (url.protocol == "https:") {
     websocketServerPath = `wss://${url.hostname}/ws/`
 } else {
-    websocketServerPath = `ws://localhost:3000/ws/`
+    websocketServerPath = `ws://localhost/ws/`
 }
 
 const channel = new WebSocket(websocketServerPath)
