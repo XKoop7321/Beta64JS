@@ -1,7 +1,7 @@
 # beta64js
 
 ### Links
-(none yet)
+[Main Website](https://xkoop7321.github.io/Beta64JS)
 
 ## What is this?
 beta64js is sm64js but beta sm64.
