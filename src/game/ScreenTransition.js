@@ -2,7 +2,7 @@ import { WARP_TRANSITION_FADE_INTO_COLOR, WARP_TRANSITION_FADE_FROM_STAR } from 
 import { GameInstance as Game } from "./Game"
 import * as Gbi from "../include/gbi"
 import { atan2s } from "../engine/math_util"
-import { dl_proj_mtx_fullscreen, dl_transition_draw_filled_region, texture_transition_star_half, dl_draw_quad_verts_0123, dl_screen_transition_end, matrix_identity, matrix_fullscreen } from "../common_gfx/segment2"
+import { dl_proj_mtx_fullscreen, dl_transition_draw_filled_region, texture_transition_star_half, dl_draw_quad_verts_0123, dl_screen_transition_end, matrix_identity, matrix_fullscreen } from "../textures/segment2"
 import { round_float, make_vertex } from "./GeoMisc"
 
 const canvas = document.querySelector('#gameCanvas')
@@ -198,4 +198,16 @@ export const render_screen_transition = (fadeTimer, transType, transTime, transD
 			return render_textured_transition(fadeTimer, transTime, transData, TEX_TRANS_STAR, TRANS_TYPE_MIRROR)
 		default: throw "unknown transition type"
 	}
+}
+
+export const geo_cannon_circle_base = (callContext, node, mtx) => {
+    // let dlist = null
+
+    // if (callContext == GEO_CONTEXT_RENDER && gCurrentArea != null
+    //     && gCurrentArea.camera.mode == CAMERA_MODE_INSIDE_CANNON) {
+    //     graphNode.fnNode.node.flags = (graphNode.fnNode.node.flags & 0xFF) | 0x500
+    //     dlist = render_cannon_circle_base()
+    // }
+    // return dlist
+    return []
 }

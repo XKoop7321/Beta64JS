@@ -1,7 +1,8 @@
 import * as MathUtil from "../../engine/math_util"
 import * as Gbi from "../../include/gbi"
 import * as LevelData from "./leveldata"
-import * as cGFX from "../../common_gfx/segment2"
+import * as LevelData2 from "./custom_title"
+import * as cGFX from "../../textures/segment2"
 import * as TitleScreenBG from "./title_screen_bg"
 
 const canvas = document.querySelector('#gameCanvas')
@@ -10,8 +11,8 @@ let gTitleZoomCounter = 0
 let gTitleFadeCounter = 0
 
 const INTRO_STEPS_ZOOM_IN = 20
-const INTRO_STEPS_HOLD_1 = 75
-const INTRO_STEPS_ZOOM_OUT = 91
+const INTRO_STEPS_HOLD_1 = 135
+const INTRO_STEPS_ZOOM_OUT = 151
 
 const INTRO_BACKGROUND_SUPER_MARIO = 0
 const INTRO_BACKGROUND_GAME_OVER = 1
@@ -82,7 +83,7 @@ export const geo_title_screen = (param, graphNode, unused) => {
 
         MathUtil.guScale(scaleMat, scaleX, scaleY, scaleZ)
         Gbi.gSPMatrix(displayList, scaleMat, Gbi.G_MTX_MODELVIEW | Gbi.G_MTX_MUL | Gbi.G_MTX_PUSH)
-        Gbi.gSPDisplayList(displayList, LevelData.intro_seg7_dl_0700B3A0)
+        Gbi.gSPDisplayList(displayList, LevelData2.title_DL)
         Gbi.gSPEndDisplayList(displayList)
         gTitleZoomCounter++
     }
@@ -131,8 +132,8 @@ const introBackgroundDlRows = [
 ]
 
 const intro_backdrop_one_image = (index, backgroundTable) => {
-    const aspect = canvas.width / canvas.height
-    const num_tiles_h = parseInt(((aspect * canvas.height) + 159) / 160)
+    // const aspect = canvas.width / canvas.height
+    const num_tiles_h = /*parseInt(((aspect * canvas.height) + 159) / 160)*/ 8
 
     const mtx = new Array(4).fill(0).map(() => new Array(4).fill(0))
 
@@ -163,8 +164,8 @@ export const geo_intro_backdrop = (param, graphNode, unused) => {
         const index = graphNode.unk18 & 0xff
         const backgroundTable = introBackgroundTables[index]
         const displayList = []
-        const aspect = canvas.width / canvas.height
-        const num_tiles_h = parseInt(((aspect * canvas.height) + 159) / 160)
+        // const aspect = canvas.width / canvas.height
+        const num_tiles_h = /*parseInt(((aspect * canvas.height) + 159) / 160)*/ 136
 
         graphNode.flags = (graphNode.flags & 0xFF) | 0x100
         Gbi.gSPDisplayList(displayList, cGFX.dl_proj_mtx_fullscreen)

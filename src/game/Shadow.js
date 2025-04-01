@@ -1,10 +1,14 @@
 import { SurfaceCollisionInstance as SurfaceCollision } from "../engine/SurfaceCollision"
 import { ObjectListProcessorInstance as ObjectListProc } from "./ObjectListProcessor"
+import { GeoRendererInstance as GeoRenderer } from "../engine/GeoRenderer"
 import * as Mario from "./Mario"
 import { atan2s } from "../engine/math_util"
+import { coss, sins } from "../utils"
 import { make_vertex, round_float } from "./GeoMisc"
 import * as Gbi from "../include/gbi"
-import { dl_shadow_circle, dl_shadow_9_verts, dl_shadow_end } from "../common_gfx/segment2"
+import { dl_shadow_circle, dl_shadow_square, dl_shadow_9_verts, dl_shadow_end, dl_shadow_4_verts } from "../textures/segment2"
+import { FLOOR_LOWER_LIMIT_SHADOW } from "../include/surface_terrains"
+import { oFaceAngleYaw } from "../include/object_constants"
 
 export const SHADOW_CIRCLE_9_VERTS = 0
 export const SHADOW_CIRCLE_4_VERTS = 1
@@ -58,6 +62,7 @@ const atan2_deg = (a, b) => {
 }
 
 const correct_shadow_solidity_for_animations = (isLuigi, initialSolidity, shadow) => {
+    if (ObjectListProc.gMarioObject.length > 1) throw "not implemented multiple mario shadow"
     const player = ObjectListProc.gMarioObject
     const animFrame = player.header.gfx.unk38.animFrame
     switch (player.header.gfx.unk38.animID) {
@@ -162,6 +167,9 @@ const calculate_vertex_xyz = (index, s, posVtx, shadowVertexType) => {
             case SHADOW_WITH_9_VERTS:
                 posVtx[1] = SurfaceCollision.find_floor_height_and_data(posVtx[0], s.parentY, posVtx[2], {})
                 break
+            case SHADOW_WITH_4_VERTS:
+                posVtx[1] = extrapolate_vertex_y_position(s, posVtx[0], posVtx[2])
+                break
             default: throw "unimplemented shadow vertex type"
         }
     }
@@ -171,6 +179,11 @@ const calculate_vertex_xyz = (index, s, posVtx, shadowVertexType) => {
 const get_texture_coords_9_vertices = (vertexNum, textures) => {
     textures.X = vertexNum % 3 * 15 - 15
     textures.Y = Math.floor(vertexNum / 3) * 15 - 15
+}
+
+const get_texture_coords_4_vertices = (vertexNum, textures) => {
+    textures.X = (vertexNum % 2) * 2 * 15 - 15
+    textures.Y = Math.floor(vertexNum / 2) * 2 * 15 - 15
 }
 
 const make_shadow_vertex_at_xyz = (vertices, index, relX, relY, relZ, alpha, shadowVertexType) => {
@@ -184,6 +197,9 @@ const make_shadow_vertex_at_xyz = (vertices, index, relX, relY, relZ, alpha, sha
     switch (shadowVertexType) {
         case SHADOW_WITH_9_VERTS:
             get_texture_coords_9_vertices(index, textures)
+            break
+        case SHADOW_WITH_4_VERTS:
+            get_texture_coords_4_vertices(index, textures)
             break
         default: throw "unimplmented shadow vertex type"
     }
@@ -217,7 +233,8 @@ const add_shadow_to_display_list = (displayList, verts, shadowVertexType, shadow
             Gbi.gSPDisplayList(displayList, dl_shadow_circle)
             break
         case SHADOW_SHAPE_SQUARE:
-            throw "need to add shadow square"
+            Gbi.gSPDisplayList(displayList, dl_shadow_square)
+            break
     }
     switch (shadowVertexType) {
         case SHADOW_WITH_9_VERTS:
@@ -225,7 +242,9 @@ const add_shadow_to_display_list = (displayList, verts, shadowVertexType, shadow
             Gbi.gSPDisplayList(displayList, dl_shadow_9_verts)
             break
         case SHADOW_WITH_4_VERTS:
-            throw "need to add 4 verts shadow"
+            Gbi.gSPVertex(displayList, verts, 4, 0)
+            Gbi.gSPDisplayList(displayList, dl_shadow_4_verts)
+            break
     }
     Gbi.gSPDisplayList(displayList, dl_shadow_end)
     Gbi.gSPEndDisplayList(displayList)
@@ -253,8 +272,195 @@ const create_shadow_player = (xPos, yPos, zPos, shadowScale, solidity, isLuigi) 
     return displayList
 }
 
-export const create_shadow_below_xyz = (xPos, yPos, zPos, shadowScale, shadowSolidity, shadowType) => {
+/**
+ * Create a circular shadow composed of 9 vertices.
+ */
+const create_shadow_circle_9_verts = (xPos, yPos, zPos, shadowScale, solidity) => {
+    const shadow = {}
 
+    if (init_shadow(shadow, xPos, yPos, zPos, shadowScale, solidity) != 0) {
+        return
+    }
+
+    const verts = new Array(9)
+    const displayList = []
+
+    for (let i = 0; i < 9; i++) {
+        make_shadow_vertex(verts, i, shadow, SHADOW_WITH_9_VERTS)
+    }
+    add_shadow_to_display_list(displayList, verts, SHADOW_WITH_9_VERTS, SHADOW_SHAPE_CIRCLE)
+    return displayList
+}
+
+/**
+ * Create a circular shadow composed of 4 vertices.
+ */
+const create_shadow_circle_4_verts = (xPos, yPos, zPos, shadowScale, solidity) => {
+    const shadow = {}
+
+    if (init_shadow(shadow, xPos, yPos, zPos, shadowScale, solidity) != 0) {
+        return
+    }
+
+    const verts = new Array(4)
+    const displayList = []
+
+    for (let i = 0; i < 4; i++) {
+        make_shadow_vertex(verts, i, shadow, SHADOW_WITH_4_VERTS)
+    }
+    add_shadow_to_display_list(displayList, verts, SHADOW_WITH_4_VERTS, SHADOW_SHAPE_CIRCLE)
+    return displayList
+}
+
+
+const frontLeftX  = 0
+const frontLeftZ  = 1
+const frontRightX = 2
+const frontRightZ = 3
+const backLeftX   = 4
+const backLeftZ   = 5
+const backRightX  = 6
+const backRightZ  = 7
+
+/**
+ * Let (oldZ, oldX) be the relative coordinates of a point on a rectangle,
+ * assumed to be centered at the origin on the standard SM64 X-Z plane. This
+ * function will update (newZ, newX) to equal the new coordinates of that point
+ * after a rotation equal to the yaw of the current graph node object.
+ */
+const rotate_rectangle = (c, newZ, newX, oldZ, oldX) => {
+    let obj = GeoRenderer.gCurGraphNodeObject.wrapperObjectNode.wrapperObject
+    c[newZ] = oldZ * coss(obj.rawData[oFaceAngleYaw]) - oldX * sins(obj.rawData[oFaceAngleYaw]);
+    c[newX] = oldZ * sins(obj.rawData[oFaceAngleYaw]) + oldX * coss(obj.rawData[oFaceAngleYaw]);
+}
+
+/**
+ * Create a rectangular shadow composed of 4 vertices. This assumes the ground
+ * underneath the shadow is totally flat.
+ */
+const create_shadow_rectangle = (halfWidth, halfLength, relY, solidity) => {
+    const verts = new Array(4)
+    const displayList = []
+    const c = new Array(8)
+
+    if (verts == null || displayList == null) {
+        return null
+    }
+
+    // Rotate the shadow based on the parent object's face angle.
+    rotate_rectangle(c, frontLeftZ,  frontLeftX,  -halfLength, -halfWidth)
+    rotate_rectangle(c, frontRightZ, frontRightX, -halfLength,  halfWidth)
+    rotate_rectangle(c, backLeftZ,   backLeftX,    halfLength, -halfWidth)
+    rotate_rectangle(c, backRightZ,  backRightX,   halfLength,  halfWidth)
+
+    make_shadow_vertex_at_xyz(verts, 0, c[frontLeftX],  relY, c[frontLeftZ],  solidity, 1)
+    make_shadow_vertex_at_xyz(verts, 1, c[frontRightX], relY, c[frontRightZ], solidity, 1)
+    make_shadow_vertex_at_xyz(verts, 2, c[backLeftX],   relY, c[backLeftZ],   solidity, 1)
+    make_shadow_vertex_at_xyz(verts, 3, c[backRightX],  relY, c[backRightZ],  solidity, 1)
+
+    add_shadow_to_display_list(displayList, verts, SHADOW_WITH_4_VERTS, SHADOW_SHAPE_SQUARE)
+    return displayList
+}
+
+/**
+ * Populate `shadowHeight` and `solidity` appropriately; the default solidity
+ * value is 200. Return 0 if a shadow should be drawn, 1 if not.
+ */
+const get_shadow_height_solidity = (xPos, yPos, zPos, p) => {  // *shadowHeight, u8 *solidity
+    let waterLevel
+
+    p.shadowHeight = SurfaceCollision.find_floor_height_and_data(xPos, yPos, zPos, {})
+
+    if (p.shadowHeight < FLOOR_LOWER_LIMIT_SHADOW) {
+        return 1
+    } else {
+        waterLevel = SurfaceCollision.find_water_level(xPos, zPos)
+
+        if (yPos >= waterLevel && waterLevel >= p.shadowHeight) {
+            gShadowAboveWaterOrLava = 1
+            p.shadowHeight = waterLevel
+            p.solidity = 200
+        }
+    }
+    return 0
+}
+
+/**
+ * Create a square shadow composed of 4 vertices.
+ */
+const create_shadow_square = (xPos, yPos, zPos, shadowScale, solidity, shadowType) => {
+    let distFromShadow
+    let shadowRadius
+    const p = {}
+
+    p.solidity = solidity
+    if (get_shadow_height_solidity(xPos, yPos, zPos, p) != 0) {
+        return null
+    }
+
+    distFromShadow = yPos - p.shadowHeight
+    switch (shadowType) {
+        case SHADOW_SQUARE_PERMANENT:
+            shadowRadius = shadowScale / 2
+            break
+        case SHADOW_SQUARE_SCALABLE:
+            shadowRadius = scale_shadow_with_distance(shadowScale, distFromShadow) / 2.0
+            break
+        case SHADOW_SQUARE_TOGGLABLE:
+            shadowRadius = disable_shadow_with_distance(shadowScale, distFromShadow) / 2.0
+            break
+        default:
+            return null
+    }
+
+    return create_shadow_rectangle(shadowRadius, shadowRadius, -distFromShadow, p.solidity)
+}
+
+const rectangles = [
+    /* Shadow for Spindels. */
+    { halfWidth: 360.0, halfLength: 230.0, scaleWithDistance: true },
+    /* Shadow for Whomps. */
+    { halfWidth: 200.0, halfLength: 180.0, scaleWithDistance: true },
+]
+
+/**
+ * Create a rectangular shadow whose parameters have been hardcoded in the
+ * `rectangles` array.
+ */
+const create_shadow_hardcoded_rectangle = (xPos, yPos, zPos, shadowScale, solidity, shadowType) => {
+    let distFromShadow
+    let halfWidth
+    let halfLength
+    let idx = shadowType - SHADOW_RECTANGLE_HARDCODED_OFFSET
+
+    p.solidity = solidity
+    if (get_shadow_height_solidity(xPos, yPos, zPos, p) != 0) {
+        return null
+    }
+
+    distFromShadow = yPos - p.shadowHeight
+    /**
+     * Note that idx could be negative or otherwise out of the bounds of
+     * the `rectangles` array. In practice, it never is, because this was
+     * only used twice.
+     */
+    if (rectangles[idx].scaleWithDistance) {
+        halfWidth  = scale_shadow_with_distance(rectangles[idx].halfWidth, distFromShadow)
+        halfLength = scale_shadow_with_distance(rectangles[idx].halfLength, distFromShadow)
+    } else {
+        // This code is never used because the third element of the rectangle
+        // struct is always TRUE.
+        halfWidth  = rectangles[idx].halfWidth
+        halfLength = rectangles[idx].halfLength
+    }
+    return create_shadow_rectangle(halfWidth, halfLength, -distFromShadow, p.solidity)
+}
+
+/**
+ * Create a shadow at the absolute position given, with the given parameters.
+ * Return a pointer to the display list representing the shadow.
+ */
+export const create_shadow_below_xyz = (xPos, yPos, zPos, shadowScale, shadowSolidity, shadowType) => {
     const floorWrapper = {}
     SurfaceCollision.find_floor(xPos, yPos, zPos, floorWrapper)
 
@@ -263,9 +469,29 @@ export const create_shadow_below_xyz = (xPos, yPos, zPos, shadowScale, shadowSol
     }
 
     switch (shadowType) {
+        case SHADOW_CIRCLE_9_VERTS:
+            return create_shadow_circle_9_verts(xPos, yPos, zPos, shadowScale, shadowSolidity)
+
+        case SHADOW_CIRCLE_4_VERTS:
+            return create_shadow_circle_4_verts(xPos, yPos, zPos, shadowScale, shadowSolidity)
+
+        case SHADOW_CIRCLE_4_VERTS_FLAT_UNUSED: // unused shadow type
+            return create_shadow_circle_assuming_flat_ground(xPos, yPos, zPos, shadowScale, shadowSolidity)
+
+        case SHADOW_SQUARE_PERMANENT:
+            return create_shadow_square(xPos, yPos, zPos, shadowScale, shadowSolidity, shadowType)
+
+        case SHADOW_SQUARE_SCALABLE:
+            return create_shadow_square(xPos, yPos, zPos, shadowScale, shadowSolidity, shadowType)
+
+        case SHADOW_SQUARE_TOGGLABLE:
+            return create_shadow_square(xPos, yPos, zPos, shadowScale, shadowSolidity, shadowType)
+            break;
+
         case SHADOW_CIRCLE_PLAYER:
             return create_shadow_player(xPos, yPos, zPos, shadowScale, shadowSolidity, false)
-        default: throw "unimplemented shadow type - create_shadow_below_xyz"
-    }
 
+        default:
+            return create_shadow_hardcoded_rectangle(xPos, yPos, zPos, shadowScale, shadowSolidity, shadowType)
+    }
 }

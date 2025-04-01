@@ -3,13 +3,35 @@
   "version": "0.0.0",
   "description": "sm64js",
   "author": {
-    "name": ""
+    "name": "Snuffy"
+  },
+  "scripts": {
+    "build": "webpack --mode production",
+    "build:dev": "webpack --mode development",
+    "start": "webpack-dev-server --host 0.0.0.0 --disable-host-check --mode development --env https://sm64js-dev.smmdb.net",
+    "protoc": "protoc --proto_path ../proto --js_out=import_style=commonjs,binary:./proto ../proto/mario.proto"
+  },
+  "babel": {
+    "presets": [
+      "@babel/preset-env"
+    ]
   },
   "dependencies": {
-    "css-loader": "^3.6.0",
+    "chokidar": "^3.5.2",
     "google-protobuf": "^3.13.0",
-    "got": "^11.8.0",
+    "howler": "^2.2.3",
+    "idb-keyval": "^6.0.3",
     "mathjs": "^7.0.1",
+    "msgpack-lite": "^0.1.26"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.9.6",
+    "@babel/preset-env": "^7.9.6",
+    "babel-loader": "^8.1.0",
+    "copy-webpack-plugin": "6",
+    "css-loader": "^3.6.0",
+    "html-loader": "^1.1.0",
+    "html-webpack-plugin": "^4.3.0",
     "mini-css-extract-plugin": "^0.9.0",
     "optimize-css-assets-webpack-plugin": "^5.0.4",
     "style-loader": "^1.2.1",
@@ -17,27 +39,6 @@
     "webpack": "^4.43.0",
     "webpack-cli": "^3.3.11",
     "webpack-dev-server": "^3.11.0",
-    "ws": "^8.18.1"
-  },
-  "scripts": {
-    "quickstart": "npm install && webpack --mode production && node server.js",
-    "serve": "node server.js",
-    "build": "webpack --mode production",
-    "build:dev": "webpack --mode development",
-    "start": "webpack-dev-server --host 0.0.0.0 --disable-host-check  --mode development",
-    "protoc": "protoc --js_out=import_style=commonjs,binary:. proto/mario.proto"
-  },
-  "babel": {
-    "presets": [
-      "@babel/preset-env"
-    ]
-  },
-  "devDependencies": {
-    "@babel/core": "^7.9.6",
-    "@babel/preset-env": "^7.9.6",
-    "babel-loader": "^8.1.0",
-    "html-loader": "^1.1.0",
-    "html-webpack-plugin": "^4.3.0",
     "webpack-node-externals": "^1.7.2"
   },
   "browserslist": [

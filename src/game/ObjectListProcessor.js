@@ -1,21 +1,91 @@
 import { PlatformDisplacementInstance as PlatformDisplacement } from "./PlatformDisplacement"
-import { RESPAWN_INFO_DONT_RESPAWN, ACTIVE_FLAGS_DEACTIVATED, RESPAWN_INFO_TYPE_32, oPosX, oPosY, oPosZ, oFaceAnglePitch, oFaceAngleRoll, oFaceAngleYaw, oMoveAnglePitch, oMoveAngleRoll, oMoveAngleYaw, oVelX, oVelY, oVelZ, oAngleVelPitch, oAngleVelYaw, oAngleVelRoll, oBehParams, oBehParams2ndByte } from "../include/object_constants"
+import {
+    RESPAWN_INFO_DONT_RESPAWN, ACTIVE_FLAGS_DEACTIVATED, RESPAWN_INFO_TYPE_32, oPosX, oPosY, oPosZ, oFaceAnglePitch, oFaceAngleRoll, oFaceAngleYaw, oMoveAnglePitch, oMoveAngleRoll, oMoveAngleYaw, oVelX, oVelY, oVelZ, oAngleVelPitch, oAngleVelYaw, oAngleVelRoll, oBehParams, oBehParams2ndByte, ACTIVE_FLAG_ACTIVE, RESPAWN_INFO_TYPE_16, oFlags, OBJ_FLAG_PERSISTENT_RESPAWN, oMarioParticleFlags, oActiveParticleFlags,
+    ACTIVE_PARTICLE_DUST, ACTIVE_PARTICLE_V_STAR, ACTIVE_PARTICLE_H_STAR, ACTIVE_PARTICLE_SPARKLES, ACTIVE_PARTICLE_BUBBLE,
+    ACTIVE_PARTICLE_WATER_SPLASH, ACTIVE_PARTICLE_IDLE_WATER_WAVE, ACTIVE_PARTICLE_PLUNGE_BUBBLE, ACTIVE_PARTICLE_WAVE_TRAIL,
+    ACTIVE_PARTICLE_FIRE, ACTIVE_PARTICLE_SHALLOW_WATER_WAVE, ACTIVE_PARTICLE_SHALLOW_WATER_SPLASH, ACTIVE_PARTICLE_LEAF,
+    ACTIVE_PARTICLE_SNOW, ACTIVE_PARTICLE_BREATH, ACTIVE_PARTICLE_DIRT, ACTIVE_PARTICLE_MIST_CIRCLE, ACTIVE_PARTICLE_TRIANGLE
+} from "../include/object_constants"
 import { SpawnObjectInstance as Spawn } from "./SpawnObject"
 import * as GraphNode from "../engine/graph_node"
 import { BehaviorCommandsInstance as Behavior } from "../engine/BehaviorCommands"
 import * as Mario from "./Mario"
-import { LevelUpdateInstance as LevelUpdate } from "./LevelUpdate"
 import { detect_object_collisions } from "./ObjectCollisions"
-import { networkData, gameData as socketGameData } from "../socket"
-import { copyMarioUpdateToState } from "./MultiMarioManager"
+import { networkData, gameData as socketGameData, updateNetworkBeforeRender } from "../mmo/socket"
+import { copyMarioUpdateToState } from "../mmo/MultiMarioManager"
 import { vec3f_dif, vec3f_length } from "../engine/math_util"
-
+import { uint32, uint16 } from "../utils"
+import {
+    MODEL_MIST, MODEL_NONE, MODEL_SPARKLES, MODEL_BUBBLE, MODEL_WATER_SPLASH, MODEL_IDLE_WATER_WAVE, MODEL_WHITE_PARTICLE_SMALL,
+    MODEL_WAVE_TRAIL, MODEL_RED_FLAME
+} from "../include/model_ids"
+import {
+    PARTICLE_DUST, PARTICLE_VERTICAL_STAR, PARTICLE_HORIZONTAL_STAR, PARTICLE_SPARKLES, PARTICLE_BUBBLE, PARTICLE_WATER_SPLASH,        
+    PARTICLE_IDLE_WATER_WAVE, PARTICLE_PLUNGE_BUBBLE, PARTICLE_WAVE_TRAIL, PARTICLE_FIRE, PARTICLE_SHALLOW_WATER_WAVE,  
+    PARTICLE_SHALLOW_WATER_SPLASH, PARTICLE_LEAF, PARTICLE_SNOW, PARTICLE_BREATH, PARTICLE_DIRT, PARTICLE_MIST_CIRCLE, PARTICLE_TRIANGLE
+} from "../include/mario_constants"
+import * as MarioConstants from "../include/mario_constants"
+import { gLinker } from "./Linker"
+import { spawn_object_at_origin, obj_copy_pos_and_angle, dist_between_objects } from "./ObjectHelpers"
 
 class ObjectListProcessor {
     constructor() {
+        PlatformDisplacement.ObjectListProc = this
+        this.sParticleTypesInit = () => {
+            return [
+                {
+                    particleFlag: PARTICLE_HORIZONTAL_STAR, activeParticleFlag: ACTIVE_PARTICLE_H_STAR, model: MODEL_NONE,
+                    behavior: gLinker.behaviors.bhvHorStarParticleSpawner
+                },
+                {
+                    particleFlag: PARTICLE_VERTICAL_STAR, activeParticleFlag: ACTIVE_PARTICLE_V_STAR, model: MODEL_NONE,
+                    behavior: gLinker.behaviors.bhvVertStarParticleSpawner
+                },
+                {
+                    particleFlag: PARTICLE_TRIANGLE, activeParticleFlag: ACTIVE_PARTICLE_TRIANGLE, model: MODEL_NONE,
+                    behavior: gLinker.behaviors.bhvTriangleParticleSpawner
+                },
+                {
+                    particleFlag: PARTICLE_DUST, activeParticleFlag: ACTIVE_PARTICLE_DUST, model: MODEL_MIST,
+                    behavior: gLinker.behaviors.bhvMistParticleSpawner
+                },
+                {
+                    particleFlag: PARTICLE_MIST_CIRCLE, activeParticleFlag: ACTIVE_PARTICLE_MIST_CIRCLE, model: MODEL_NONE,
+                    behavior: gLinker.behaviors.bhvMistCircParticleSpawner
+                },
+                {
+                    particleFlag: PARTICLE_BUBBLE, activeParticleFlag: ACTIVE_PARTICLE_BUBBLE, model: MODEL_BUBBLE,
+                    behavior: gLinker.behaviors.bhvBubbleParticleSpawner
+                },
+                {
+                    particleFlag: PARTICLE_WATER_SPLASH, activeParticleFlag: ACTIVE_PARTICLE_WATER_SPLASH, model: MODEL_WATER_SPLASH,
+                    behavior: gLinker.behaviors.bhvWaterSplash
+                },
+                {
+                    particleFlag: PARTICLE_IDLE_WATER_WAVE, activeParticleFlag: ACTIVE_PARTICLE_IDLE_WATER_WAVE, model: MODEL_IDLE_WATER_WAVE,
+                    behavior: gLinker.behaviors.bhvIdleWaterWave
+                },
+                {
+                    particleFlag: PARTICLE_PLUNGE_BUBBLE, activeParticleFlag: ACTIVE_PARTICLE_PLUNGE_BUBBLE, model: MODEL_WHITE_PARTICLE_SMALL,
+                    behavior: gLinker.behaviors.bhvPlungeBubble
+                },
+                {
+                    particleFlag: PARTICLE_WAVE_TRAIL, activeParticleFlag: ACTIVE_PARTICLE_WAVE_TRAIL, model: MODEL_WAVE_TRAIL,
+                    behavior: gLinker.behaviors.bhvWaveTrail
+                }
+            ]
+        }
+
+        this.TIME_STOP_UNKNOWN_0 = (1 << 0)
+        this.TIME_STOP_ENABLED = (1 << 1)
+        this.TIME_STOP_DIALOG = (1 << 2)
+        this.TIME_STOP_MARIO_AND_DOORS = (1 << 3)
+        this.TIME_STOP_ALL_OBJECTS = (1 << 4)
+        this.TIME_STOP_MARIO_OPENED_DOOR = (1 << 5)
+        this.TIME_STOP_ACTIVE = (1 << 6)
 
         this.OBJECT_POOL_CAPACITY = 240
-
+		
         this.OBJ_LIST_PLAYER = 0      //  (0) mario
         this.OBJ_LIST_UNUSED_1 = 1    //  (1) (unused)
         this.OBJ_LIST_DESTRUCTIVE = 2 //  (2) things that can be used to destroy other objects, like
@@ -61,10 +131,12 @@ class ObjectListProcessor {
         this.gObjectCounter = 0
         this.gCCMEnteredSlide = 0
         this.gCheckingSurfaceCollisionsForCamera = 0
+        this.gMarioShotFromCannon = 0
         this.gObjectLists = new Array(13).fill(0).map(() => { 
-            const blankObj = { header: {} }
-            blankObj.header.prev = blankObj
-            blankObj.header.next = blankObj
+
+            const blankObj = { gfx: {} }
+            blankObj.prev = blankObj
+            blankObj.next = blankObj
             return blankObj
         })
 
@@ -86,28 +158,56 @@ class ObjectListProcessor {
             }
         })
 
+        this.gObjectCounter = 0  /// probaly not used and not needed
+
+        Spawn.SurfaceLoad.clear_dynamic_surfaces()
+        this.update_terrain_objects()
+
+        PlatformDisplacement.apply_mario_platform_displacement()
+
         detect_object_collisions()
-        this.update_non_terrain_objects()
+        this.update_non_terrain_objects()  /// includes local mario
+
+        this.update_remote_marios()
+
+        updateNetworkBeforeRender()
+
+        this.unload_deactivated_objects()
+
+        PlatformDisplacement.update_mario_platform()
+    }
+
+    update_remote_marios() {
+
+        Object.values(networkData.remotePlayers).forEach(remotePlayer => {
+            this.gCurrentObject = remotePlayer.marioState.marioObj
+            this.gCurrentObject.header.gfx.node.flags |= GraphNode.GRAPH_RENDER_HAS_ANIMATION
+
+            try { /// surpress bugs for now
+
+                Behavior.cur_obj_update()
+
+                remotePlayer.crashCount = 0
+
+            } catch (error) {
+                console.log("unknown error in 'execute_mario_action' - please report this issue to sm64js devs  -- playerName: " + this.gCurrentObject.marioState.playerName)
+                console.log(error)
+                remotePlayer.crashCount++
+            }
+
+            
+        })
+    }
+
+    update_terrain_objects() {
+        this.gObjectCounter += this.update_objects_in_list(this.gObjectLists[this.OBJ_LIST_SPAWNER])
+        this.gObjectCounter += this.update_objects_in_list(this.gObjectLists[this.OBJ_LIST_SURFACE])
     }
 
     update_non_terrain_objects() {
         this.sObjectListUpdateOrder.slice(2).forEach(listIndex => {
             this.gObjectCounter += this.update_objects_in_list(this.gObjectLists[listIndex])
         })
-
-        ///Update Other Mario Behaviors  // removing old method
-/*        getExtraMarios().forEach(extraMario => {
-            this.gCurrentObject = {
-                bhvScript: { commands: window.bhvExtraMario, index: 4 },
-                rawData: [...this.marioPlayerObj.rawData],
-                bhvStack: [4]
-            }
-            this.gCurrentObject.rawData[oPosX] = extraMario.pos[0]
-            this.gCurrentObject.rawData[oPosY] = extraMario.pos[1]
-            this.gCurrentObject.rawData[oPosZ] = extraMario.pos[2]
-
-            Behavior.cur_obj_update()
-        })*/
     }
 
     update_objects_in_list(objList) {
@@ -128,32 +228,79 @@ class ObjectListProcessor {
         return count
     }
 
-    bhv_mario_update() {
+    unload_deactivated_objects_in_list(objList) {
+        let obj = objList.next
 
-        const torsoDiff = [0, 0, 0]
-        vec3f_dif(torsoDiff, LevelUpdate.gMarioState.pos, LevelUpdate.gMarioState.marioBodyState.torsoPos)
-        if (vec3f_length(torsoDiff) > 300)
-            LevelUpdate.gMarioState.marioBodyState.torsoPos = [ ...LevelUpdate.gMarioState.pos ]
+        while (objList != obj) {
+            this.gCurrentObject = obj.wrapperObject
+            obj = obj.next
 
-        Mario.execute_mario_action(LevelUpdate.gMarioState)
-        this.copy_mario_state_to_object(LevelUpdate.gMarioState)
+            if ((this.gCurrentObject.activeFlags & ACTIVE_FLAG_ACTIVE) != ACTIVE_FLAG_ACTIVE) {
+                /// Prevent object from respawning after exiting and re-entering the area
+                if (!(this.gCurrentObject.rawData[oFlags] & OBJ_FLAG_PERSISTENT_RESPAWN)) {
+                    this.set_object_respawn_info_bits(this.gCurrentObject, RESPAWN_INFO_DONT_RESPAWN)
+                }
 
-        Object.values(networkData.remotePlayers).forEach(remotePlayer => {
-            try { /// surpress bugs for now
-                Mario.execute_mario_action(remotePlayer.marioState)
-                this.copy_mario_state_to_object(remotePlayer.marioState)
-                remotePlayer.crashCount = 0
-            } catch (error) {
-                console.log("unknown error in 'execute_mario_action' - please report this issue to sm64js devs  -- playerName: " + remotePlayer.marioState.playerName)
-                console.log(error)
-                remotePlayer.crashCount++
-            }  
+                Spawn.unload_object(this.gCurrentObject)
+            }
+
+        }
+
+        return 0
+    }
+
+    unload_deactivated_objects() {
+        this.sObjectListUpdateOrder.forEach(listIndex => {
+            this.unload_deactivated_objects_in_list(this.gObjectLists[listIndex])
         })
-        
+    }
+
+    set_object_respawn_info_bits(obj, bits) {
+        switch (obj.respawnInfoType) {
+            case RESPAWN_INFO_TYPE_32:
+                let info32 = uint32(obj.respawnInfo)
+                info32 |= bits << 8
+                obj.respawnInfo = info32
+                break
+            case RESPAWN_INFO_TYPE_16:
+                let info16 = uint16(obj.respawnInfo)
+                info16 |= bits << 8
+                obj.respawnInfo = info16
+                break
+        }
+    }
+
+    spawn_particle(activeParticleFlag, model, behavior) {
+        if (!(this.gCurrentObject.rawData[oActiveParticleFlags] & activeParticleFlag)) {
+            this.gCurrentObject.rawData[oActiveParticleFlags] |= activeParticleFlag
+            const particle = spawn_object_at_origin(this.gCurrentObject, model, behavior)
+            obj_copy_pos_and_angle(particle, this.gCurrentObject)
+        }
+    }
+
+    bhv_mario_update() {
+        const torsoDiff = [0, 0, 0]
+        vec3f_dif(torsoDiff, this.gCurrentObject.marioState.pos, this.gCurrentObject.marioState.marioBodyState.torsoPos)
+        if (vec3f_length(torsoDiff) > 300)
+            this.gCurrentObject.marioState.marioBodyState.torsoPos = [...this.gCurrentObject.marioState.pos]
+
+        const particleFlags = Mario.execute_mario_action(this.gCurrentObject.marioState)
+        this.gCurrentObject.rawData[oMarioParticleFlags] = particleFlags
+        this.copy_mario_state_to_object(this.gCurrentObject.marioState)
+
+        if (this.sParticleTypes == undefined) this.sParticleTypes = this.sParticleTypesInit()
+        this.sParticleTypes.forEach(particleType => {
+            if (particleFlags & particleType.particleFlag) {
+                const distanceToLocalMario = dist_between_objects(this.gCurrentObject, this.gMarioObject)
+                if (distanceToLocalMario < 1000.0) {
+                    this.spawn_particle(particleType.activeParticleFlag, particleType.model, particleType.behavior)
+                }
+            }
+        })
     }
 
     copy_mario_state_to_object(marioState) {
-
+		
         marioState.marioObj.rawData[oPosX] = marioState.pos[0]
         marioState.marioObj.rawData[oPosY] = marioState.pos[1]
         marioState.marioObj.rawData[oPosZ] = marioState.pos[2]
@@ -206,7 +353,7 @@ class ObjectListProcessor {
                 object.respawnInfo = spawnInfo.behaviorArg
 
                 if (spawnInfo.behaviorArg & 0x01) { // Is mario
-                    if (this.totalMarios != 0) throw "ERROR, only 1 mario should be initialized here"
+                    if (this.totalMarios != 0) console.log("ERROR, only 1 mario should be initialized here")
                     this.totalMarios++
                     this.gMarioObject = object
                     this.gMarioObject.localMario = true
@@ -237,7 +384,7 @@ class ObjectListProcessor {
     clear_objects() {
 
         Spawn.clear_object_lists()
-
+        Spawn.SurfaceLoad.clear_dynamic_surfaces()
     }
 }
 

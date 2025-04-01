@@ -1,41 +1,62 @@
 import * as Keydrown from "./keydrown.min.js"
-import { sendChat } from "./socket.js"
-import { gameData } from "./socket.js"
+import { gameData, sendChat, submitPlayerName } from "./mmo/socket"
+import { tauntCommands, handleTaunt } from "./mmo/graphics/taunt"
+import { startGame, gameStarted } from "./index"
 
 /////// Keyboard / Gamepad Input ////////
-window.playerInput = {}
 window.banPlayerList = []
+window.show_minimap = 0
 let textboxfocus = false
 
+function checkIfFocused(id) {
+    if (document.activeElement === document.getElementById(id)) {
+        return true
+    } else {
+        return false
+    }
+}
+
+export const sendChatMsg = (msg) => {
+    if (msg[0] == '!') {
+        handleTaunt(msg)
+    } else if (msg.split(' ')[0] == '/block') { // hacky way to combine chat and ban box
+        window.banPlayerList.push(msg.split(' ')[1])
+    } else {
+        sendChat({ message: msg })
+    }
+}
 
 //// Prevent scrolling for arrow keys
 window.addEventListener("keydown", (e) => {
-    textboxfocus = $("#chatbox").is(':focus') ||
-                    $("#playerNameInput").is(':focus') ||
-                    $("#ccPasteArea").is(':focus') ||
-                    $("#banbox").is(':focus')
 
-    if ($("#chatbox").is(':focus') && e.keyCode == 13) {
-        sendChat(document.getElementById('chatbox').value)
-        document.getElementById('chatbox').value = ""
-        document.getElementById('chatbox').blur()
+    textboxfocus = checkIfFocused("chatbox") ||
+                    checkIfFocused("playerNameInput") ||
+                    checkIfFocused("ccPasteArea")
+
+    if (checkIfFocused("chatbox") && e.keyCode == 13) {
+
+        const chatbox = document.getElementById('chatbox')
+
+        sendChatMsg(chatbox.value)
+
+        chatbox.value = ""
+        chatbox.blur()
     }
 
-    if ($("#banbox").is(':focus') && e.keyCode == 13) {
-        window.banPlayerList.push(document.getElementById('banbox').value)
-        document.getElementById('banbox').value = ""
-        document.getElementById('banbox').blur()
+    if (document.getElementById("playerNameRow").hidden && e.keyCode == 13) {
+        $("#signinSection").effect("shake", { direction: "down", times: 3, distance: 3 }, 500)
     }
 
-    if ($("#playerNameInput").is(':focus') && e.keyCode == 13) {
+    if (!window.playerNameAccepted && e.keyCode == 13 && !document.getElementById("playerNameRow").hidden) {
         document.getElementById('playerNameInput').blur()
+        submitPlayerName()
     }
+
+    if (textboxfocus) return
 
     // space and arrow keys
-    if (textboxfocus) return
-    if ([32, 37, 38, 39, 40].includes(e.keyCode) > -1) {
-        e.preventDefault()
-    }
+    if ([32, 37, 38, 39, 40].includes(e.keyCode)) { e.preventDefault()  }
+
 }, false)
 
 const keyboardButtons = {}
@@ -131,7 +152,7 @@ Keydrown.LEFT.up(() => { keyboardButtons.left = false })
 Keydrown.RIGHT.up(() => { keyboardButtons.right = false })
 Keydrown.CTRL.up(() => { keyboardButtons.ctrl = false })
 
-const keyboardButtonMapping = {
+const defaultKeyboardButtonMapping = {
     a: 'space',
     b: 'b',
     start: 'enter',
@@ -139,23 +160,37 @@ const keyboardButtonMapping = {
     up: 'up',
     down: 'down',
     left: 'left',
-    right: 'right'
+    right: 'right',
+    cu: 'i',
+    cd: 'k',
+    cl: 'j',
+    cr: 'l',
+    map: 'm',
+    taunt: 't',
+    parachute: 'v',
+    chat: 'y',
+    freezeCam: 'f'
 }
-const defaultKeyboardButtonMapping = { ...keyboardButtonMapping }
+const keyboardButtonMapping = { ...defaultKeyboardButtonMapping }
 
 const gamepadButtonMapping = { //works for xbox
     a: 0,
     b: 2,
+    map: 4,
+    taunt: 5,
     start: 9,
+    parachute: 7,
     z: 6,
     stickX: 0,
-    stickY: 1
+    stickY: 1,
+    cStickX: 2,
+    cStickY: 3
 }
 
 const defaultGamepadButtonMapping = { ...gamepadButtonMapping }
 
-
-let deadzone = 0.08
+// help drifting sticks
+let deadzone = 0.3
 
 if (localStorage['controls']) {
     Object.assign(keyboardButtonMapping, JSON.parse(localStorage['controls']).keyboard)
@@ -178,19 +213,6 @@ Array.from(document.getElementsByTagName("select")).forEach(selectElem => {
     }
 })
 
-const keyboardControlsHtml = $('#keyboardControlsWindow').detach()
-const gamepadControlsHtml = $('#gamepadControlsWindow').detach()
-
-$('[data-toggle="keyboardControlsToggle"]').popover({
-    container: "body",
-    content: keyboardControlsHtml
-})
-
-$('[data-toggle="gamepadControlsToggle"]').popover({
-    container: "body",
-    content: gamepadControlsHtml
-})
-
 let gamepadIndex
 
 window.addEventListener("gamepadconnected", function (e) {
@@ -201,8 +223,6 @@ window.addEventListener("gamepadconnected", function (e) {
 
     const numButtons = gamepad.buttons.length
     const numAxes = gamepad.axes.length
-
-    $('[data-toggle="gamepadControlsToggle"]').popover('show')
 
     document.getElementById('noGamepadMessage').hidden = true
     document.getElementById('gamepadMessageDiv').hidden = false
@@ -231,8 +251,6 @@ window.addEventListener("gamepadconnected", function (e) {
         }
         selectElem.value = gamepadButtonMapping[selectElem.name]
     })
-
-    $('[data-toggle="gamepadControlsToggle"]').popover('hide')
     
 })
 
@@ -302,10 +320,13 @@ export const playerInputUpdate = () => {
             b: gamepad.buttons[gamepadButtonMapping['b']].touched,
             start: gamepad.buttons[gamepadButtonMapping['start']].touched,
             z: gamepad.buttons[gamepadButtonMapping['z']].touched,
-            cr: gamepad.axes[2] && gamepad.axes[2] > 0.5,
-            cl: gamepad.axes[2] && gamepad.axes[2] < -0.5,
-            cu: gamepad.axes[3] && gamepad.axes[3] < -0.5,
-            cd: gamepad.axes[3] && gamepad.axes[3] > 0.5,
+            map: gamepad.buttons[gamepadButtonMapping['map']].touched,
+            taunt: gamepad.buttons[gamepadButtonMapping['taunt']].touched,
+            parachute: gamepad.buttons[gamepadButtonMapping['parachute']].touched,
+            cr: gamepad.axes[gamepadButtonMapping['cStickX']] && gamepad.axes[gamepadButtonMapping['cStickX']] > 0.5,
+            cl: gamepad.axes[gamepadButtonMapping['cStickX']] && gamepad.axes[gamepadButtonMapping['cStickX']] < -0.5,
+            cu: gamepad.axes[gamepadButtonMapping['cStickY']] && gamepad.axes[gamepadButtonMapping['cStickY']] < -0.5,
+            cd: gamepad.axes[gamepadButtonMapping['cStickY']] && gamepad.axes[gamepadButtonMapping['cStickY']] > 0.5,
         })
     }
 
@@ -329,27 +350,52 @@ export const playerInputUpdate = () => {
     let buttonDownB = gamepadFinal.b || keyboardFinal.b
     let buttonDownStart = gamepadFinal.start || keyboardFinal.start
     let buttonDownZ = gamepadFinal.z || keyboardFinal.z
-    let buttonDownCl = gamepadFinal.cl
-    let buttonDownCr = gamepadFinal.cr
-    let buttonDownCu = gamepadFinal.cu
-    let buttonDownCd = gamepadFinal.cd
+    let buttonDownCl = gamepadFinal.cl || keyboardFinal.cl
+    let buttonDownCr = gamepadFinal.cr || keyboardFinal.cr
+    let buttonDownCu = gamepadFinal.cu || keyboardFinal.cu
+    let buttonDownCd = gamepadFinal.cd || keyboardFinal.cd
+    let buttonDownMap = gamepadFinal.map || keyboardFinal.map
+    let buttonDownTaunt = gamepadFinal.taunt || keyboardFinal.taunt
+    let parachuteDown = gamepadFinal.parachute || keyboardFinal.parachute
+    let buttonDownChat = keyboardFinal.chat
+    let buttonDownFreezeCam = keyboardFinal.freezeCam
 
-    window.playerInput = {
+    window.sm64js.playerInput = {
         stickX, stickY,
         stickMag: mag,
 
-        buttonPressedA: buttonDownA && !window.playerInput.buttonDownA,
-        buttonPressedStart: buttonDownStart && !window.playerInput.buttonDownStart,
-        buttonPressedB: buttonDownB && !window.playerInput.buttonDownB,
-        buttonPressedZ: buttonDownZ && !window.playerInput.buttonDownZ,
-        buttonPressedCl: buttonDownCl && !window.playerInput.buttonDownCl,
-        buttonPressedCr: buttonDownCr && !window.playerInput.buttonDownCr,
-        buttonPressedCu: buttonDownCu && !window.playerInput.buttonDownCu,
-        buttonPressedCd: buttonDownCd && !window.playerInput.buttonDownCd,
+        buttonPressedA: buttonDownA && !window.sm64js.playerInput.buttonDownA,
+        buttonPressedStart: buttonDownStart && !window.sm64js.playerInput.buttonDownStart,
+        buttonPressedB: buttonDownB && !window.sm64js.playerInput.buttonDownB,
+        buttonPressedZ: buttonDownZ && !window.sm64js.playerInput.buttonDownZ,
+        buttonPressedCl: buttonDownCl && !window.sm64js.playerInput.buttonDownCl && !buttonDownTaunt,
+        buttonPressedCr: buttonDownCr && !window.sm64js.playerInput.buttonDownCr && !buttonDownTaunt,
+        buttonPressedCu: buttonDownCu && !window.sm64js.playerInput.buttonDownCu && !buttonDownTaunt,
+        buttonPressedCd: buttonDownCd && !window.sm64js.playerInput.buttonDownCd && !buttonDownTaunt,
+        buttonPressedMap: buttonDownMap && !window.sm64js.playerInput.buttonDownMap,
+		parachute: parachuteDown && !window.sm64js.playerInput.parachuteDown,
+        buttonPressedChat: buttonDownChat && !window.sm64js.playerInput.buttonDownChat,
+		buttonPressedFreezeCam: buttonDownFreezeCam && !window.sm64js.playerInput.buttonDownFreezeCam,
 
-        buttonDownA, buttonDownB, buttonDownZ, buttonDownStart, buttonDownCl, buttonDownCr, buttonDownCu, buttonDownCd
+        buttonDownA, buttonDownB, buttonDownZ, buttonDownStart, buttonDownCl, buttonDownCr, buttonDownCu, buttonDownCd, buttonDownMap, buttonDownTaunt, parachuteDown, buttonDownChat, buttonDownFreezeCam,
+
+        taunt: (Object.values(tauntCommands).includes(window.taunt)) ? window.taunt : undefined,
+		
     }
-    
-    if (gameData.marioState) gameData.marioState.controller = window.playerInput
 
+    window.taunt = undefined
+
+    if (window.sm64js.playerInput.buttonPressedMap) window.show_minimap += 1
+    if (window.show_minimap > 2) window.show_minimap = 0
+
+    if (gameData.marioState) gameData.marioState.controller = window.sm64js.playerInput
+
+    if (window.sm64js.playerInput.buttonPressedStart && keyboardButtonMapping.start != "enter") {
+        submitPlayerName()
+    }
+
+    if (window.sm64js.playerInput.buttonPressedChat) {
+        document.getElementById("chatbox").focus()
+    }
+    if (window.sm64js.playerInput.buttonPressedFreezeCam) { window.freezeCamera() }
 }

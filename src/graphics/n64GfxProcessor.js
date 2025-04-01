@@ -1,6 +1,12 @@
 import { WebGLInstance as WebGL } from "./WebGL"
 import * as Gbi from "../include/gbi"
-import { getExtraRenderData } from "../cosmetics"
+import { gameData as socketGameData, networkData } from "../mmo/socket"
+import { getExtraRenderData } from "../mmo/cosmetics"
+import { flagCounter } from "../levels/castle_grounds/areas/1/11/model.inc"
+import { customData2D, custom_draw_text, draw2Dpost3Drendering, drawFX } from "../mmo/graphics/2Dgraphics"
+const gcanvas = document.querySelector('#gameCanvas')
+const canvas2d = document.querySelector('#textCanvas')
+
 
 const precomp_shaders = [
     0x01200200,
@@ -30,17 +36,10 @@ const precomp_shaders = [
 
 const MAX_BUFFERED = 256
 const MAX_LIGHTS = 2
-const MAX_VERTICES = 64
-
-let opCount = 0
-
-const canvas2d = document.querySelector('#textCanvas')
-const context2d = canvas2d.getContext('2d')
+const MAX_VERTICES = 8192
 
 export class n64GfxProcessor {
     constructor() {
-
-        this.random = 0
 
         //buffer
         this.buf_vbo = [] //new Array(MAX_BUFFERED * 26 * 3).fill(0.0) // 3 vertices in a triangle and 26 floats per vtx
@@ -96,11 +95,7 @@ export class n64GfxProcessor {
             color_image_address: null
         }
 
-        this.customData = {
-            playerName: "",
-            skinID: 0,
-            chat: ""
-        }
+        this.customData3D = { skinID: 0 }
 
         this.color_combiner_pool = []
 
@@ -128,11 +123,6 @@ export class n64GfxProcessor {
     }
 
     start_frame(){
-        /// handle input
-        /// handle dimensions
-    }
-
-    end_frame() {
         const dstCanvas = document.getElementById("fullCanvas")
 
         if (window.fullWindowMode || document.fullscreenElement) {
@@ -141,10 +131,20 @@ export class n64GfxProcessor {
             WebGL.canvas.hidden = true
             canvas2d.hidden = true
             if (window.fullWindowMode) {
+                const windowAspect = window.innerWidth / window.innerHeight
+                if (windowAspect > 1.33) { /// wider than tall
+                    dstCanvas.height = window.innerHeight
+                    dstCanvas.width = window.innerHeight * 1.33
+                } else {  /// taller than wide
+                    dstCanvas.width = window.innerWidth
+                    dstCanvas.height = window.innerWidth / 1.33
+                }
                 window.scrollTo(0, 0)
-                dstCanvas.width = window.innerWidth
-                dstCanvas.height = window.innerHeight
                 document.body.style.overflowY = "hidden"
+                if (gcanvas.width != 640 && gcanvas.height != 480) {
+                    dstCanvas.width = window.innerWidth
+                    dstCanvas.height = window.innerHeight
+                }
             }
             dstCtx.drawImage(WebGL.canvas, 0, 0, dstCanvas.width, dstCanvas.height)
             dstCtx.drawImage(canvas2d, 0, 0, dstCanvas.width, dstCanvas.height)
@@ -375,7 +375,7 @@ export class n64GfxProcessor {
         const rgba32_buf = []
 
         for (let i = 0; i < this.rdp.loaded_texture[tile].size_bytes / 2; i++) {
-            const intensity = this.rdp.loaded_texture[tile].textureData[2 * i] >> 4
+            const intensity = this.rdp.loaded_texture[tile].textureData[2 * i]
             const alpha = this.rdp.loaded_texture[tile].textureData[2* i + 1]
 
             rgba32_buf.push(intensity)
@@ -458,10 +458,21 @@ export class n64GfxProcessor {
     }
 
     calc_and_set_viewport(viewport) {
-        let width = 2.0 * viewport.vscale[0] / 4.0
-        let height = 2.0 * viewport.vscale[1] / 4.0
-        let x = (viewport.vtrans[0] / 4.0) - width / 2.0
-        let y = 240 - ((viewport.vtrans[1] / 4.0) + height / 2.0)
+        let width
+        let height
+        let x
+        let y
+        if (document.getElementById("gameCanvas").width == 640 && document.getElementById("gameCanvas").height == 480) {
+            width = 2.0 * viewport.vscale[0] / 4.0
+            height = 2.0 * viewport.vscale[1] / 4.0
+            x = (viewport.vtrans[0] / 4.0) - width / 2.0
+            y = 240 - ((viewport.vtrans[1] / 4.0) + height / 2.0)
+        } else {
+            width = viewport.vscale[0] / 2.0
+            height = viewport.vscale[1] / 2.0
+            x = viewport.vtrans[0]
+            y = viewport.vtrans[1]
+        }
 
         width *= 2.0
         height *= 2.0
@@ -771,6 +782,61 @@ export class n64GfxProcessor {
 
     }
 
+    dp_texture_rectangle(ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, flip) {
+        const saved_combine_mode = this.rdp.combine_mode
+
+        if (this.rdp.other_mode_h[Gbi.G_MDSFT_CYCLETYPE] == Gbi.G_CYC_COPY) {
+            // Per RDP Command Summary Set Tile's shift s and this dsdx should be set to 4 texels
+            // Divide by 4 to get 1 instead
+            dsdx >>= 2
+
+            // Color combiner is turned off in copy mode
+            this.dp_set_combine_mode(this.color_comb(0, 0, 0, Gbi.G_CCMUX_TEXEL0), this.color_comb(0, 0, 0, Gbi.G_ACMUX_TEXEL0))
+
+            // Per documentation one extra pixel is added in this modes to each edge
+            lrx += 1 << 2
+            lry += 1 << 2
+        }
+
+        // uls and ult are S10.5
+        // dsdx and dtdy are S5.10
+        // lrx, lry, ulx, uly are U10.2
+        // lrs, lrt are S10.5
+        if (flip) {
+            dsdx = -dsdx
+            dtdy = -dtdy
+        }
+
+        const width = !flip ? lrx - ulx : lry - uly
+        const height = !flip ? lry - uly : lrx - ulx
+        const lrs = ((uls << 7) + dsdx * width) >> 7
+        const lrt = ((ult << 7) + dtdy * height) >> 7
+
+        const ul = this.rsp.loaded_vertices[MAX_VERTICES + 0]
+        const ll = this.rsp.loaded_vertices[MAX_VERTICES + 1]
+        const lr = this.rsp.loaded_vertices[MAX_VERTICES + 2]
+        const ur = this.rsp.loaded_vertices[MAX_VERTICES + 3]
+
+        ul.u = uls
+        ul.v = ult
+        lr.u = lrs
+        lr.v = lrt
+        if (!flip) {
+            ll.u = uls
+            ll.v = lrt
+            ur.u = lrs
+            ur.v = ult
+        } else {
+            ll.u = lrs
+            ll.v = ult
+            ur.u = uls
+            ur.v = lrt
+        }
+
+        this.draw_rectangle(ulx, uly, lrx, lry)
+        this.rdp.combine_mode = saved_combine_mode
+    }
+
     sp_texture(s, t) {
         this.rsp.texture_scaling_factor = { s, t }
     }
@@ -879,15 +945,19 @@ export class n64GfxProcessor {
 
     sp_vertex(dest_index, vertices) {
 
-        for (let i = 0; i < vertices.length; i++, dest_index++) {
+        for (let i = dest_index; i < vertices.length; i++) {
 
-            const v = vertices[i]
+            // const v = vertices[i]
+            let v = vertices[i]
+            if (Array.isArray(v)) {
+                v = {pos: v[0], flag: v[1], tc: v[2], color: v[3]}
+            }
             const normal = [
                 v.color[0] > 127 ? v.color[0] - 256 : v.color[0],
                 v.color[1] > 127 ? v.color[1] - 256 : v.color[1],
                 v.color[2] > 127 ? v.color[2] - 256 : v.color[2]
             ]
-            const d = this.rsp.loaded_vertices[dest_index]
+            const d = this.rsp.loaded_vertices[i]
 
             const x = v.pos[0] * this.rsp.MP_matrix[0][0] + v.pos[1] * this.rsp.MP_matrix[1][0] + v.pos[2] * this.rsp.MP_matrix[2][0] + this.rsp.MP_matrix[3][0]
             const y = v.pos[0] * this.rsp.MP_matrix[0][1] + v.pos[1] * this.rsp.MP_matrix[1][1] + v.pos[2] * this.rsp.MP_matrix[2][1] + this.rsp.MP_matrix[3][1]
@@ -963,7 +1033,7 @@ export class n64GfxProcessor {
             d.u = U; d.v = V
 
             if (v.special == "nameplate" && w < 2000 && !d.clip_rej) {
-                this.custom_draw_text(x, y, w)
+                custom_draw_text(x, y, w)
             }
 
             Object.assign(d, { x, y, z, w })
@@ -985,42 +1055,18 @@ export class n64GfxProcessor {
         }
     }
 
-    custom_draw_text(x, y, w) {
-        const pixelX = ((x / w) * 0.5 + 0.5) * canvas2d.width
-        const pixelY = ((y / w) * -0.5 + 0.5) * canvas2d.height
-
-        if (this.customData.playerName) {
-            context2d.globalAlpha = 0.8
-            context2d.font = "bold 14px verdana, sans-serif"
-            context2d.textAlign = "center"
-            context2d.fillStyle = "#9400D3"
-            context2d.fillText(this.customData.playerName, pixelX, pixelY)
-        }
-
-        if (this.customData.chat) {
-            context2d.font = "bold 16px verdana, sans-serif"
-            const width = context2d.measureText(this.customData.chat).width
-
-            context2d.fillStyle = "#FFFFFF"
-            context2d.globalAlpha = 0.8
-            context2d.rect(pixelX - (width/2) - 5, pixelY - 50, width + 10, 30)
-            context2d.fill()
-            context2d.globalCompositeOperation = 'source-over'
-            
-
-            context2d.globalAlpha = 1.0
-            context2d.font = "bold 16px verdana, sans-serif"
-            context2d.textAlign = "center"
-            context2d.fillStyle = "#000000"
-            context2d.fillText(this.customData.chat, pixelX, pixelY - 30)
-            context2d.globalCompositeOperation = 'destination-over'
-        }
-        
-
-    }
-
-    custom_set_player_data(channel_id) { 
-        this.customData = getExtraRenderData(channel_id)
+    custom_set_player_data(socket_id) { 
+        const data = getExtraRenderData(socket_id)
+		const socketData = networkData.remotePlayers[socket_id]
+        this.customData3D = data.custom3D
+        customData2D.chat = data.custom2D.chat
+        customData2D.playerName = data.custom2D.playerName
+        customData2D.announcement = data.custom2D.announcement
+		if (socketData == undefined) { 
+			customData2D.health = null
+		} else {
+			customData2D.health = socketData.marioState.health
+		}
     }
 
     run_dl(commands) {
@@ -1029,8 +1075,6 @@ export class n64GfxProcessor {
 
             const opcode = command.words.w0
             const args = command.words.w1
-
-            opCount++
 
             switch (opcode) {
                 case Gbi.G_ENDDL: /// not necessary for JS
@@ -1098,10 +1142,17 @@ export class n64GfxProcessor {
                     this.dp_fill_rectangle(args.ulx, args.uly, args.lrx, args.lry)
                     break
                 case Gbi.G_SETPLAYERDATA:
-                    this.custom_set_player_data(args.channel_id)
+                    this.custom_set_player_data(args.socket_id)
+                    break
+                case Gbi.G_SETFLAGINDEX:
+                    flagCounter.data = args.flagIndex
+                    break
+                case Gbi.G_TEXRECT:
+                case Gbi.G_TEXRECTFLIP:
+                    this.dp_texture_rectangle(args.ulx, args.uly, args.lrx, args.lry, args.tile, args.uls, args.ult, args.dsdx, args.dtdy, opcode == Gbi.G_TEXRECTFLIP)
                     break
                 case Gbi.G_DL:
-                    const displayList = args.childDisplayList.call ? args.childDisplayList(this.customData) : args.childDisplayList
+                    const displayList = args.childDisplayList.call ? args.childDisplayList(this.customData3D) : args.childDisplayList
                     if (args.branch == 0) {
                         this.run_dl(displayList)
                     } else {
@@ -1125,23 +1176,16 @@ export class n64GfxProcessor {
     }
 
     run(commands) {
-        window.totalTriangles = 0
+        window.sm64js.totalTriangles = 0
         this.sp_reset()
-
         WebGL.start_frame()
         canvas2d.width = canvas2d.width
         this.run_dl(commands)
         this.flush()
 
-        if (window.latency) {
-            context2d.globalAlpha = 0.8
-            context2d.font = "bold 14px verdana, sans-serif"
-            context2d.textAlign = "center"
-            context2d.fillStyle = "#9400D3"
-            context2d.fillText(`Ping: ${window.latency}ms`, 580, 20)
-        }
+        draw2Dpost3Drendering()
+        drawFX()
 
     }
 }
-
 export const n64GfxProcessorInstance = new n64GfxProcessor()
