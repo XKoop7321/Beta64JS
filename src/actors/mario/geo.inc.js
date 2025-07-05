@@ -57,29 +57,6 @@ import {
     mario_low_poly_cap_off_eyes_half_closed,
     mario_low_poly_cap_off_eyes_closed,
 } from "./mario.inc"
-import {
-	luigi_cap_on_eyes_front, luigi_cap_on_eyes_half_closed, luigi_cap_on_eyes_closed,
-	luigi_cap_off_eyes_front, luigi_cap_off_eyes_half_closed, luigi_cap_off_eyes_closed,
-
-	luigi_torso,
-    luigi_low_poly_cap_on_eyes_front, luigi_low_poly_cap_on_eyes_half_closed, 
-    luigi_low_poly_cap_on_eyes_closed, luigi_low_poly_cap_off_eyes_front, 
-    luigi_low_poly_cap_off_eyes_half_closed, luigi_low_poly_cap_off_eyes_closed, 
-    luigi_low_poly_butt, luigi_low_poly_torso, luigi_low_poly_left_arm, 
-    luigi_low_poly_left_forearm_shared_dl, luigi_low_poly_left_hand_closed, 
-    luigi_low_poly_right_arm, luigi_low_poly_right_forearm_shared_dl, 
-    luigi_low_poly_right_hand_closed, luigi_low_poly_left_thigh,
-    luigi_low_poly_left_leg_shared_dl, luigi_low_poly_left_foot,
-    luigi_low_poly_right_thigh, luigi_low_poly_right_leg_shared_dl,
-    luigi_low_poly_right_foot, 
-    luigi_butt, luigi_left_arm, luigi_left_forearm_shared_dl, 
-    luigi_left_hand_closed, luigi_right_thigh, luigi_right_leg_shared_dl, luigi_right_foot, 
-    luigi_left_foot, luigi_left_leg_shared_dl, luigi_right_arm, luigi_right_forearm_shared_dl, 
-    luigi_right_hand_closed, luigi_left_thigh, luigi_left_hand_open, luigi_right_hand_open, luigi_right_hand_peace, luigi_right_hand_cap, luigi_right_hand_cap_wings
-} from "./luigi.inc"
-import {
-	wario_head_cap_on_DL, wario_head_cap_off_DL, wario_mustache
-} from "./wario.inc"
 import { parachute_DL, parachute_off_DL } from "../parachute/model.inc"
 import { kart_DL, kart_off_DL } from "../kart/model.inc"
 import { MarioMiscInstance as MarioMisc } from "../../game/MarioMisc"
@@ -694,8 +671,8 @@ export const mario_geo_render_body = [
 			{ command: Geo.node_switch_case, args: [0, MarioMisc.geo_switch_mario_model, MarioMisc] },
 				{ command: Geo.open_node },
 					{ command: Geo.branch, args: [1, mario_geo_body ] },
-					{ command: Geo.branch, args: [1, luigi_geo_body ] }, //L
-					{ command: Geo.branch, args: [1, wario_geo_body ] }, //W
+					{ command: Geo.branch, args: [1, mario_geo_body ] }, //L
+					{ command: Geo.branch, args: [1, mario_geo_body ] }, //W
 					{ command: Geo.branch, args: [1, mario_geo_body ] }, //Y
 					{ command: Geo.branch, args: [1, mario_geo_body ] }, //M
 				{ command: Geo.close_node },
@@ -705,8 +682,8 @@ export const mario_geo_render_body = [
 			{ command: Geo.node_switch_case, args: [0, MarioMisc.geo_switch_mario_model, MarioMisc] },
 				{ command: Geo.open_node },
 					{ command: Geo.branch, args: [1, mario_geo_medium_poly_body ] },
-					{ command: Geo.branch, args: [1, luigi_geo_medium_poly_body ] }, //L
-					{ command: Geo.branch, args: [1, wario_geo_body ] }, //W
+					{ command: Geo.branch, args: [1, mario_geo_medium_poly_body ] }, //L
+					{ command: Geo.branch, args: [1, mario_geo_medium_poly_body ] }, //W
 					{ command: Geo.branch, args: [1, mario_geo_medium_poly_body ] }, //Y
 					{ command: Geo.branch, args: [1, mario_geo_medium_poly_body ] }, //M
 				{ command: Geo.close_node },
@@ -716,7 +693,7 @@ export const mario_geo_render_body = [
 			{ command: Geo.node_switch_case, args: [0, MarioMisc.geo_switch_mario_model, MarioMisc] },
 				{ command: Geo.open_node },
 					{ command: Geo.branch, args: [1, mario_geo_low_poly_body ] },
-					{ command: Geo.branch, args: [1, luigi_geo_low_poly_body ] }, //L
+					{ command: Geo.branch, args: [1, mario_geo_low_poly_body ] }, //L
 					{ command: Geo.branch, args: [1, mario_geo_low_poly_body ] }, //W
 					{ command: Geo.branch, args: [1, mario_geo_low_poly_body ] }, //Y
 					{ command: Geo.branch, args: [1, mario_geo_low_poly_body ] }, //M
